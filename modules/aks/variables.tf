@@ -14,10 +14,10 @@ variable "resource_group_name" {
   type = string
 }
 
-variable "kubernetes_version" {
-  type    = string
-  default = "1.28"
-}
+#variable "kubernetes_version" {
+#  type    = string
+#  default = "1.31"
+#}
 
 variable "node_count" {
   type    = number
