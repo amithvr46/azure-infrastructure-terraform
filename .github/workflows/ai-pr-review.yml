@@ -1,0 +1,126 @@
+name: AI PR Reviewer
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '**.tf'
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  ai-review:
+    name: AI Terraform Code Review
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install anthropic
+
+      - name: Get changed Terraform files
+        run: |
+          git diff --name-only origin/main...HEAD -- '*.tf' > changed_files.txt
+          echo "Changed files:"
+          cat changed_files.txt
+
+      - name: Run AI PR Review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python - << 'PYEOF'
+          import os
+          import json
+          import urllib.request
+
+          changed_files = []
+          with open('changed_files.txt') as f:
+              changed_files = [l.strip() for l in f.readlines() if l.strip()]
+
+          if not changed_files:
+              print("No Terraform files changed")
+              exit(0)
+
+          all_code = ""
+          for file in changed_files:
+              if os.path.exists(file):
+                  with open(file) as f:
+                      all_code += f"\n\n# File: {file}\n{f.read()}"
+
+          api_key = os.environ.get("ANTHROPIC_API_KEY")
+
+          if api_key and all_code.strip():
+              try:
+                  import anthropic
+                  client = anthropic.Anthropic(api_key=api_key)
+                  message = client.messages.create(
+                      model="claude-sonnet-4-5",
+                      max_tokens=1024,
+                      messages=[{
+                          "role": "user",
+                          "content": f"""Review this Terraform code for Azure infrastructure.
+          Identify security issues, missing tags, misconfigurations, best practice violations.
+
+          Format response as:
+          ## AI Terraform Code Review
+
+          ### Critical Issues
+          - list issues
+
+          ### Warnings
+          - list warnings
+
+          ### Passed Checks
+          - list what looks good
+
+          ### Recommendations
+          - list improvements
+
+          Code to review:
+          {all_code}"""
+                      }]
+                  )
+                  review = message.content[0].text
+                  print("AI review completed!")
+              except Exception as e:
+                  review = f"## AI Terraform Code Review\n\nError calling Claude API: {str(e)}"
+          else:
+              review = "## AI Terraform Code Review\n\nAdd ANTHROPIC_API_KEY secret for live AI review."
+
+          pr_number = os.environ.get("PR_NUMBER")
+          repo = os.environ.get("GITHUB_REPOSITORY")
+          token = os.environ.get("GITHUB_TOKEN")
+
+          print(f"Posting review to PR #{pr_number}")
+          print(review)
+
+          if pr_number and repo and token:
+              url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
+              data = json.dumps({"body": review}).encode()
+              req = urllib.request.Request(url, data=data, headers={
+                  "Authorization": f"token {token}",
+                  "Content-Type": "application/json",
+                  "User-Agent": "AI-PR-Reviewer"
+              })
+              try:
+                  urllib.request.urlopen(req)
+                  print("Review posted as PR comment!")
+              except Exception as e:
+                  print(f"Could not post comment: {e}")
+          PYEOF

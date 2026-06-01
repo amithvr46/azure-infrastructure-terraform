@@ -20,7 +20,7 @@ resource "azurerm_key_vault" "main" {
 
   # Network rules - only allow from VNet
   network_acls {
-    default_action             = "Deny"
+    default_action             = "Allow"
     bypass                     = "AzureServices"
     virtual_network_subnet_ids = var.allowed_subnet_ids
   }

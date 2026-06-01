@@ -27,10 +27,15 @@ resource "azurerm_kubernetes_cluster" "main" {
     type = "SystemAssigned"
   }
 
+  oidc_issuer_enabled       = true
+  workload_identity_enabled = true
+
   network_profile {
-    network_plugin    = "azure"
-    network_policy    = "azure"
-    load_balancer_sku = "standard"
+    network_plugin     = "azure"
+    network_policy     = "azure"
+    load_balancer_sku  = "standard"
+    service_cidr       = "10.1.0.0/16"
+    dns_service_ip     = "10.1.0.10"
   }
 
   # Enable monitoring

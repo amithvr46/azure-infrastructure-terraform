@@ -16,6 +16,7 @@ resource "azurerm_subnet" "aks" {
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = [var.subnet_prefixes["aks"]]
+  service_endpoints    = ["Microsoft.KeyVault"]
 }
 
 # App Subnet
