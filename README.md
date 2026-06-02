@@ -3,9 +3,7 @@
 Production-style Azure Landing Zone built with Terraform.
 Modular, reusable, and ready to deploy.
 
-Built by [Amith Busireddy](https://linkedin.com/in/busireddy-amith-761311181) —
-Cloud DevOps Engineer with 6 years of experience at Wells Fargo,
-Fidelity Investments, AT&T, and Comcast.
+Built by [Amith Busireddy](https://linkedin.com/in/busireddy-amith-761311181) 
 
 ---
 
