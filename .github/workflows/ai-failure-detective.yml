@@ -1,0 +1,128 @@
+name: AI Failure Detective
+
+on:
+  workflow_run:
+    workflows: ["Terraform CI/CD"]
+    types:
+      - completed
+
+jobs:
+  analyze-failure:
+    name: Analyze Pipeline Failure
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install anthropic requests
+
+      - name: Analyze failure
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          python - <<'EOF'
+          import os
+          import urllib.request
+          import json
+
+          repo = os.environ.get("GITHUB_REPOSITORY")
+          token = os.environ.get("GITHUB_TOKEN")
+          run_id = os.environ.get("FAILED_RUN_ID")
+          api_key = os.environ.get("ANTHROPIC_API_KEY")
+
+          print(f"Analyzing failed pipeline run: {run_id}")
+
+          # Get failure logs from GitHub API
+          logs_content = f"Pipeline run {run_id} failed. Analyzing..."
+
+          try:
+              url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs"
+              req = urllib.request.Request(url, headers={
+                  "Authorization": f"token {token}",
+                  "User-Agent": "AI-Failure-Detective"
+              })
+              response = urllib.request.urlopen(req)
+              jobs_data = json.loads(response.read())
+
+              failed_steps = []
+              for job in jobs_data.get("jobs", []):
+                  if job.get("conclusion") == "failure":
+                      for step in job.get("steps", []):
+                          if step.get("conclusion") == "failure":
+                              failed_steps.append(f"Job: {job['name']} | Step: {step['name']}")
+
+              if failed_steps:
+                  logs_content = "Failed steps:\n" + "\n".join(failed_steps)
+          except Exception as e:
+              logs_content = f"Could not fetch logs: {e}"
+
+          # Analyze with Claude or mock
+          if api_key:
+              try:
+                  import anthropic
+                  client = anthropic.Anthropic(api_key=api_key)
+                  message = client.messages.create(
+                      model="claude-sonnet-4-5",
+                      max_tokens=1024,
+                      messages=[{
+                          "role": "user",
+                          "content": f"""You are a senior DevOps engineer analyzing a CI/CD pipeline failure.
+
+Analyze this failure information and provide:
+1. Most likely root cause
+2. Step by step fix
+3. How to prevent it
+
+Format as:
+## Pipeline Failure Analysis
+
+### Root Cause
+explanation
+
+### How to Fix
+steps
+
+### How to Prevent
+steps
+
+Failure info:
+{logs_content}"""
+                      }]
+                  )
+                  analysis = message.content[0].text
+              except Exception as e:
+                  analysis = f"## Pipeline Failure Analysis\n\nFailed steps detected:\n{logs_content}\n\nAdd ANTHROPIC_API_KEY secret for AI analysis."
+          else:
+              analysis = f"## Pipeline Failure Analysis\n\nFailed steps:\n{logs_content}\n\nAdd ANTHROPIC_API_KEY to secrets for AI-powered analysis."
+
+          print(analysis)
+
+          # Create GitHub issue with analysis
+          if token and repo:
+              url = f"https://api.github.com/repos/{repo}/issues"
+              data = json.dumps({
+                  "title": f"Pipeline Failure Detected — Run {run_id}",
+                  "body": analysis,
+                  "labels": ["pipeline-failure", "ai-analysis"]
+              }).encode()
+              req = urllib.request.Request(url, data=data, headers={
+                  "Authorization": f"token {token}",
+                  "Content-Type": "application/json",
+                  "User-Agent": "AI-Failure-Detective"
+              })
+              try:
+                  urllib.request.urlopen(req)
+                  print("Created GitHub issue with failure analysis!")
+              except Exception as e:
+                  print(f"Could not create issue: {e}")
+          EOF
