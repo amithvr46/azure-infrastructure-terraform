@@ -43,15 +43,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-        run: python ai_review.py
-
-      - name: Create review script
         run: |
-          cat > ai_review.py << 'PYEOF'
+          python - << 'PYEOF'
           import os
           import json
           import urllib.request
-          import anthropic
 
           changed_files = []
           with open('changed_files.txt') as f:
@@ -68,17 +64,20 @@ jobs:
                       all_code += f"\n\n# File: {file}\n{f.read()}"
 
           api_key = os.environ.get("ANTHROPIC_API_KEY")
-          if api_key and all_code.strip():
-              client = anthropic.Anthropic(api_key=api_key)
-              message = client.messages.create(
-                  model="claude-sonnet-4-5",
-                  max_tokens=1024,
-                  messages=[{
-                      "role": "user",
-                      "content": f"""Review this Terraform code for Azure infrastructure.
-          Identify: security issues, missing tags, misconfigurations, best practice violations.
 
-          Format as:
+          if api_key and all_code.strip():
+              try:
+                  import anthropic
+                  client = anthropic.Anthropic(api_key=api_key)
+                  message = client.messages.create(
+                      model="claude-sonnet-4-5",
+                      max_tokens=1024,
+                      messages=[{
+                          "role": "user",
+                          "content": f"""Review this Terraform code for Azure infrastructure.
+          Identify security issues, missing tags, misconfigurations, best practice violations.
+
+          Format response as:
           ## AI Terraform Code Review
 
           ### Critical Issues
@@ -93,17 +92,23 @@ jobs:
           ### Recommendations
           - list improvements
 
-          Code:
+          Code to review:
           {all_code}"""
-                  }]
-              )
-              review = message.content[0].text
+                      }]
+                  )
+                  review = message.content[0].text
+                  print("AI review completed!")
+              except Exception as e:
+                  review = f"## AI Terraform Code Review\n\nError calling Claude API: {str(e)}"
           else:
               review = "## AI Terraform Code Review\n\nAdd ANTHROPIC_API_KEY secret for live AI review."
 
           pr_number = os.environ.get("PR_NUMBER")
           repo = os.environ.get("GITHUB_REPOSITORY")
           token = os.environ.get("GITHUB_TOKEN")
+
+          print(f"Posting review to PR #{pr_number}")
+          print(review)
 
           if pr_number and repo and token:
               url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
@@ -113,9 +118,9 @@ jobs:
                   "Content-Type": "application/json",
                   "User-Agent": "AI-PR-Reviewer"
               })
-              urllib.request.urlopen(req)
-              print("Review posted!")
-          else:
-              print(review)
+              try:
+                  urllib.request.urlopen(req)
+                  print("Review posted as PR comment!")
+              except Exception as e:
+                  print(f"Could not post comment: {e}")
           PYEOF
-          python ai_review.py
