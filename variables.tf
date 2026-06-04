@@ -1,3 +1,5 @@
+# Testing AI PR reviewer - infrastructure variables
+
 # Root Variables
 
 variable "resource_group_name" {
