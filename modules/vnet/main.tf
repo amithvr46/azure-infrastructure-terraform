@@ -74,3 +74,27 @@ resource "azurerm_subnet_network_security_group_association" "aks" {
   subnet_id                 = azurerm_subnet.aks.id
   network_security_group_id = azurerm_network_security_group.main.id
 }
+
+
+
+
+# Test resource - AI reviewer should flag this
+resource "azurerm_network_security_group" "test" {
+  name                = "nsg-test"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+
+  security_rule {
+    name                       = "allow-all-inbound"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "0.0.0.0/0"
+    destination_address_prefix = "*"
+  }
+
+  tags = var.tags
+}
