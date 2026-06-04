@@ -8,6 +8,11 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 env:
   TF_VERSION: '1.8.3'
   WORKING_DIR: '.'
