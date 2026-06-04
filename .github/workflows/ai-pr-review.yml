@@ -5,7 +5,12 @@ on:
     branches:
       - main
     paths:
-      - '**.tf'  # Only triggers when Terraform files change
+      - '**.tf'
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 jobs:
   ai-review:
@@ -24,111 +29,77 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install anthropic requests
+        run: pip install anthropic
 
       - name: Get changed Terraform files
-        id: changed-files
         run: |
-          echo "Changed TF files:"
-          git diff --name-only origin/main...HEAD -- '*.tf' | tee changed_files.txt
+          git diff --name-only origin/main...HEAD -- '*.tf' > changed_files.txt
+          echo "Changed files:"
           cat changed_files.txt
 
       - name: Run AI PR Review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python - <<'EOF'
-          import anthropic
-          import os
-          import subprocess
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python ai_review.py
 
-          # Get changed terraform files
+      - name: Create review script
+        run: |
+          cat > ai_review.py << 'PYEOF'
+          import os
+          import json
+          import urllib.request
+          import anthropic
+
+          changed_files = []
           with open('changed_files.txt') as f:
               changed_files = [l.strip() for l in f.readlines() if l.strip()]
 
           if not changed_files:
-              print("No Terraform files changed — skipping AI review")
+              print("No Terraform files changed")
               exit(0)
 
-          # Read all changed files
           all_code = ""
           for file in changed_files:
               if os.path.exists(file):
                   with open(file) as f:
                       all_code += f"\n\n# File: {file}\n{f.read()}"
 
-          if not all_code.strip():
-              print("No code to review")
-              exit(0)
-
-          print(f"Reviewing {len(changed_files)} Terraform file(s)...")
-
-          # Call Claude API
           api_key = os.environ.get("ANTHROPIC_API_KEY")
+          if api_key and all_code.strip():
+              client = anthropic.Anthropic(api_key=api_key)
+              message = client.messages.create(
+                  model="claude-sonnet-4-5",
+                  max_tokens=1024,
+                  messages=[{
+                      "role": "user",
+                      "content": f"""Review this Terraform code for Azure infrastructure.
+          Identify: security issues, missing tags, misconfigurations, best practice violations.
 
-          if not api_key:
-              print("No API key — using mock review")
-              review = """## AI Terraform Code Review
+          Format as:
+          ## AI Terraform Code Review
 
-### Critical Issues
-- Review requires ANTHROPIC_API_KEY secret to be configured
+          ### Critical Issues
+          - list issues
 
-### How to fix
-- Add ANTHROPIC_API_KEY to GitHub repository secrets
+          ### Warnings
+          - list warnings
 
-### Note
-- All other pipeline checks (validate, plan, security scan) still run normally"""
+          ### Passed Checks
+          - list what looks good
+
+          ### Recommendations
+          - list improvements
+
+          Code:
+          {all_code}"""
+                  }]
+              )
+              review = message.content[0].text
           else:
-              try:
-                  client = anthropic.Anthropic(api_key=api_key)
-                  message = client.messages.create(
-                      model="claude-sonnet-4-5",
-                      max_tokens=1024,
-                      messages=[{
-                          "role": "user",
-                          "content": f"""You are a senior DevOps engineer reviewing Terraform code for Azure infrastructure.
-
-Review this Terraform code and identify:
-1. Security issues (open ports, public access, missing encryption)
-2. Missing required tags
-3. Misconfigurations
-4. Best practice violations
-5. What looks good
-
-Format response as:
-## AI Terraform Code Review
-
-### Critical Issues
-- list issues
-
-### Warnings
-- list warnings
-
-### Passed Checks
-- list what looks good
-
-### Recommendations
-- list improvements
-
-Code to review:
-{all_code}"""
-                      }]
-                  )
-                  review = message.content[0].text
-                  print("AI review completed successfully")
-              except Exception as e:
-                  review = f"""## AI Terraform Code Review
-
-### Status
-AI review encountered an error: {str(e)}
-
-### Note
-Manual review recommended. All other pipeline checks still run normally."""
-
-          # Post review as PR comment
-          import urllib.request
-          import json
+              review = "## AI Terraform Code Review\n\nAdd ANTHROPIC_API_KEY secret for live AI review."
 
           pr_number = os.environ.get("PR_NUMBER")
           repo = os.environ.get("GITHUB_REPOSITORY")
@@ -142,17 +113,9 @@ Manual review recommended. All other pipeline checks still run normally."""
                   "Content-Type": "application/json",
                   "User-Agent": "AI-PR-Reviewer"
               })
-              try:
-                  urllib.request.urlopen(req)
-                  print("Review posted as PR comment!")
-              except Exception as e:
-                  print(f"Could not post comment: {e}")
-                  print("Review output:")
-                  print(review)
+              urllib.request.urlopen(req)
+              print("Review posted!")
           else:
-              print("Review output:")
               print(review)
-          EOF
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          PYEOF
+          python ai_review.py
