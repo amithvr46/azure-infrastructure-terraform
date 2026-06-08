@@ -9,8 +9,14 @@ resource "azurerm_container_registry" "main" {
   sku                 = "Standard"
   admin_enabled       = false
 
-  # Geo-replication disabled for dev (saves cost)
-  # Enable for prod environments
+  retention_policy {
+    days    = var.image_retention_days
+    enabled = true
+  }
+
+  trust_policy {
+    enabled = false
+  }
 
   tags = var.tags
 }

@@ -14,10 +14,11 @@ variable "resource_group_name" {
   type = string
 }
 
-#variable "kubernetes_version" {
-#  type    = string
-#  default = "1.31"
-#}
+variable "kubernetes_version" {
+  description = "Kubernetes version — pin to a specific LTS version, upgrade intentionally"
+  type        = string
+  default     = "1.30"
+}
 
 variable "node_count" {
   type    = number

@@ -68,8 +68,8 @@ variable "aks_node_size" {
   default     = "Standard_D2s_v3"
 }
 
-#variable "kubernetes_version" {
-# description = "Kubernetes version"
-#  type        = string
-#  default     = "1.31"
-#}
+variable "kubernetes_version" {
+  description = "Kubernetes version — pin to a specific LTS version, upgrade intentionally"
+  type        = string
+  default     = "1.30"
+}

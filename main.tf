@@ -49,6 +49,7 @@ module "aks" {
   location            = var.location
   resource_group_name = azurerm_resource_group.main.name
 #  kubernetes_version  = var.kubernetes_version
+  kubernetes_version  = var.kubernetes_version
   node_count          = var.aks_node_count
   node_size           = var.aks_node_size
   aks_subnet_id       = module.vnet.aks_subnet_id

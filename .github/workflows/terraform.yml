@@ -16,6 +16,11 @@ permissions:
 env:
   TF_VERSION: '1.8.3'
   WORKING_DIR: '.'
+  BACKEND_RG: 'rg-tfstate'
+  BACKEND_SA: 'amithvr46tfstate'
+  BACKEND_CONTAINER: 'tfstate'
+  DEV_TFVARS: 'environments/dev.tfvars'
+  PROD_TFVARS: 'environments/prod.tfvars'
 
 jobs:
   terraform-validate:
@@ -36,7 +41,7 @@ jobs:
         run: terraform fmt -check -recursive
         continue-on-error: true
 
-      - name: Terraform Init
+      - name: Terraform Init (no backend)
         working-directory: ${{ env.WORKING_DIR }}
         run: terraform init -backend=false
 
@@ -48,7 +53,6 @@ jobs:
     name: Terraform Plan
     runs-on: ubuntu-latest
     needs: terraform-validate
-    if: github.event_name == 'pull_request'
 
     steps:
       - name: Checkout code
@@ -64,22 +68,40 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Terraform Init
+      - name: Terraform Init (dev)
         working-directory: ${{ env.WORKING_DIR }}
-        run: terraform init
-
-      - name: Terraform Plan
-        working-directory: ${{ env.WORKING_DIR }}
-        run: terraform plan -no-color
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ env.BACKEND_RG }}" \
+            -backend-config="storage_account_name=${{ env.BACKEND_SA }}" \
+            -backend-config="container_name=${{ env.BACKEND_CONTAINER }}" \
+            -backend-config="key=dev/azure-infra.tfstate"
         env:
           ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
           ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
           ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
 
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform plan -no-color -out=tfplan -var-file=${{ env.DEV_TFVARS }}
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: tfplan
+          retention-days: 5
+
       - name: Post Plan as PR Comment
         uses: actions/github-script@v7
-        if: always()
+        if: github.event_name == 'pull_request'
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -110,3 +132,52 @@ jobs:
           directory: .
           framework: terraform
           soft_fail: true
+
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: [terraform-plan, terraform-security]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Terraform Init (prod)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ env.BACKEND_RG }}" \
+            -backend-config="storage_account_name=${{ env.BACKEND_SA }}" \
+            -backend-config="container_name=${{ env.BACKEND_CONTAINER }}" \
+            -backend-config="key=prod/azure-infra.tfstate"
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+      - name: Download Plan Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+
+      - name: Terraform Apply (prod)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform apply -auto-approve -var-file=${{ env.PROD_TFVARS }} tfplan
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}

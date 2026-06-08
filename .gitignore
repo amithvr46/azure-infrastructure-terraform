@@ -1,9 +1,13 @@
 # Terraform
 .terraform/
-.terraform.lock.hcl
 *.tfstate
 *.tfstate.backup
 *.tfvars
+!environments/*.tfvars
+
+# Bootstrap local state is committed — it IS the source of truth for the backend resource
+!bootstrap/terraform.tfstate
+!bootstrap/terraform.tfstate.backup
 crash.log
 override.tf
 override.tf.json
@@ -19,3 +23,6 @@ override.tf.json
 # OS files
 .DS_Store
 Thumbs.db
+
+# Personal session context
+CLAUDE.md

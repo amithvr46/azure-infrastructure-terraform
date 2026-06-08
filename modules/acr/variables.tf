@@ -19,6 +19,12 @@ variable "aks_identity_id" {
   type        = string
 }
 
+variable "image_retention_days" {
+  description = "Days to retain untagged images before auto-deletion"
+  type        = number
+  default     = 30
+}
+
 variable "tags" {
   type = map(string)
 }
