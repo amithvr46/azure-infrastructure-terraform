@@ -5,9 +5,7 @@
 *.tfvars
 !environments/*.tfvars
 
-# Bootstrap local state is committed — it IS the source of truth for the backend resource
-!bootstrap/terraform.tfstate
-!bootstrap/terraform.tfstate.backup
+# Bootstrap state stays local — contains storage account access keys
 crash.log
 override.tf
 override.tf.json

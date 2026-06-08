@@ -3,10 +3,12 @@ name: Terraform CI/CD
 on:
   push:
     branches:
-      - main
+      - main       # prod deploy
+      - develop    # dev deploy
   pull_request:
     branches:
-      - main
+      - main       # PR to prod — plan only
+      - develop    # PR to dev — plan only
   workflow_dispatch:
     inputs:
       environment:
@@ -79,10 +81,10 @@ jobs:
           soft_fail: true
 
   # ─────────────────────────────────────────────
-  # PR only — plan dev, post result as PR comment
+  # PR only — plan the target environment, post comment
   # ─────────────────────────────────────────────
-  terraform-plan-dev:
-    name: Plan (dev)
+  terraform-plan:
+    name: Plan (${{ github.base_ref == 'main' && 'prod' || 'dev' }})
     runs-on: ubuntu-latest
     needs: [terraform-validate, terraform-security]
     if: github.event_name == 'pull_request'
@@ -96,6 +98,18 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
+      - name: Set environment variables
+        run: |
+          if [ "${{ github.base_ref }}" == "main" ]; then
+            echo "ENV=prod" >> $GITHUB_ENV
+            echo "STATE_KEY=prod/azure-infra.tfstate" >> $GITHUB_ENV
+            echo "TFVARS=environments/prod.tfvars" >> $GITHUB_ENV
+          else
+            echo "ENV=dev" >> $GITHUB_ENV
+            echo "STATE_KEY=dev/azure-infra.tfstate" >> $GITHUB_ENV
+            echo "TFVARS=environments/dev.tfvars" >> $GITHUB_ENV
+          fi
+
       - name: Set ARM credentials
         run: |
           echo "ARM_CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .clientId)" >> $GITHUB_ENV
@@ -108,19 +122,19 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Terraform Init (dev)
+      - name: Terraform Init
         working-directory: ${{ env.WORKING_DIR }}
         run: |
           terraform init \
             -backend-config="resource_group_name=${{ env.BACKEND_RG }}" \
             -backend-config="storage_account_name=${{ env.BACKEND_SA }}" \
             -backend-config="container_name=${{ env.BACKEND_CONTAINER }}" \
-            -backend-config="key=dev/azure-infra.tfstate"
+            -backend-config="key=${{ env.STATE_KEY }}"
 
-      - name: Terraform Plan (dev)
+      - name: Terraform Plan
         id: plan
         working-directory: ${{ env.WORKING_DIR }}
-        run: terraform plan -no-color -var-file=environments/dev.tfvars
+        run: terraform plan -no-color -var-file=${{ env.TFVARS }}
 
       - name: Post Plan as PR Comment
         uses: actions/github-script@v7
@@ -128,7 +142,8 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const output = `#### Terraform Plan — dev 🔍
+            const env = '${{ env.ENV }}';
+            const output = `#### Terraform Plan — ${env} 🔍
             \`\`\`
             ${{ steps.plan.outputs.stdout }}
             \`\`\`
@@ -141,13 +156,13 @@ jobs:
             })
 
   # ─────────────────────────────────────────────
-  # Push to main only — auto deploy to dev
+  # Push to develop — auto deploy to dev
   # ─────────────────────────────────────────────
   terraform-apply-dev:
     name: Apply (dev)
     runs-on: ubuntu-latest
     needs: [terraform-validate, terraform-security]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
 
     steps:
       - name: Checkout code
@@ -184,13 +199,13 @@ jobs:
         run: terraform apply -auto-approve -var-file=environments/dev.tfvars
 
   # ─────────────────────────────────────────────
-  # Manual trigger only — plan + approve + deploy prod
+  # Push to main — deploy to prod with approval
   # ─────────────────────────────────────────────
   terraform-plan-prod:
     name: Plan (prod)
     runs-on: ubuntu-latest
     needs: [terraform-validate, terraform-security]
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
       - name: Checkout code
@@ -238,7 +253,7 @@ jobs:
     name: Apply (prod) — requires approval
     runs-on: ubuntu-latest
     needs: terraform-plan-prod
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
 
     steps:

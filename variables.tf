@@ -30,11 +30,11 @@ variable "tags" {
   description = "Tags applied to all resources"
   type        = map(string)
   default = {
-    environment  = "dev"
-    project      = "azure-infra"
-    owner        = "amith-busireddy"
-    managed-by   = "terraform"
-    github       = "github.com/amithbusireddy/azure-infrastructure-terraform"
+    environment = "dev"
+    project     = "azure-infra"
+    owner       = "amith-busireddy"
+    managed-by  = "terraform"
+    github      = "github.com/amithbusireddy/azure-infrastructure-terraform"
   }
 }
 

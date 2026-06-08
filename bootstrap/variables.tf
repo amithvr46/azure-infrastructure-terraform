@@ -26,10 +26,10 @@ variable "tags" {
   description = "Tags applied to all resources"
   type        = map(string)
   default = {
-    environment  = "shared"
-    project      = "azure-infra"
-    owner        = "amith-busireddy"
-    managed-by   = "terraform"
-    purpose      = "terraform-remote-state"
+    environment = "shared"
+    project     = "azure-infra"
+    owner       = "amith-busireddy"
+    managed-by  = "terraform"
+    purpose     = "terraform-remote-state"
   }
 }
