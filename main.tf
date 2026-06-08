@@ -77,12 +77,15 @@ module "keyvault" {
 module "acr" {
   source = "./modules/acr"
 
-  project_name        = var.project_name
-  environment         = var.environment
-  location            = var.location
-  resource_group_name = azurerm_resource_group.main.name
-  aks_identity_id     = module.aks.cluster_identity
-  tags                = var.tags
+  project_name             = var.project_name
+  environment              = var.environment
+  location                 = var.location
+  resource_group_name      = azurerm_resource_group.main.name
+  aks_identity_id          = module.aks.cluster_identity
+  sku                      = var.acr_sku
+  retention_policy_enabled = var.acr_retention_policy_enabled
+  image_retention_days     = var.acr_image_retention_days
+  tags                     = var.tags
 
   depends_on = [module.aks]
 }

@@ -5,8 +5,8 @@ project_name        = "azinfra"
 
 # Smaller cluster — lower cost for dev
 aks_node_count     = 1
-aks_node_size      = "Standard_B2s"
-kubernetes_version = "1.30"
+aks_node_size      = "Standard_D2s_v3"
+kubernetes_version = "1.34"
 
 vnet_address_space = ["10.0.0.0/16"]
 subnet_prefixes = {

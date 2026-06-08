@@ -68,8 +68,27 @@ variable "aks_node_size" {
   default     = "Standard_D2s_v3"
 }
 
+# ACR
+variable "acr_sku" {
+  description = "ACR SKU — Standard for dev, Premium for prod"
+  type        = string
+  default     = "Standard"
+}
+
+variable "acr_retention_policy_enabled" {
+  description = "Enable retention policy — requires Premium SKU"
+  type        = bool
+  default     = false
+}
+
+variable "acr_image_retention_days" {
+  description = "Days to retain untagged images (Premium only)"
+  type        = number
+  default     = 30
+}
+
 variable "kubernetes_version" {
   description = "Kubernetes version — pin to a specific LTS version, upgrade intentionally"
   type        = string
-  default     = "1.30"
+  default     = "1.34"
 }

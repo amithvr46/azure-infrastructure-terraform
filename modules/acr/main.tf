@@ -6,12 +6,12 @@ resource "azurerm_container_registry" "main" {
   name                = "acr${var.project_name}${var.environment}"
   resource_group_name = var.resource_group_name
   location            = var.location
-  sku                 = "Standard"
+  sku                 = var.sku
   admin_enabled       = false
 
   retention_policy {
     days    = var.image_retention_days
-    enabled = true
+    enabled = var.retention_policy_enabled
   }
 
   trust_policy {

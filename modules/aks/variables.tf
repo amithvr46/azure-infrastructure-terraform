@@ -17,7 +17,7 @@ variable "resource_group_name" {
 variable "kubernetes_version" {
   description = "Kubernetes version — pin to a specific LTS version, upgrade intentionally"
   type        = string
-  default     = "1.30"
+  default     = "1.34"
 }
 
 variable "node_count" {
