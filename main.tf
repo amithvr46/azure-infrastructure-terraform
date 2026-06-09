@@ -24,7 +24,7 @@ provider "azurerm" {
 resource "azurerm_resource_group" "main" {
   name     = var.resource_group_name
   location = var.location
-  tags     = var.tags
+  tags     = local.common_tags
 }
 
 # Module 1 - VNet (networking foundation)
@@ -37,7 +37,7 @@ module "vnet" {
   resource_group_name = azurerm_resource_group.main.name
   vnet_address_space  = var.vnet_address_space
   subnet_prefixes     = var.subnet_prefixes
-  tags                = var.tags
+  tags                = local.vnet_tags
 }
 
 # Module 2 - AKS (Kubernetes cluster inside the VNet)
@@ -53,7 +53,7 @@ module "aks" {
   node_count         = var.aks_node_count
   node_size          = var.aks_node_size
   aks_subnet_id      = module.vnet.aks_subnet_id
-  tags               = var.tags
+  tags               = local.aks_tags
 
   depends_on = [module.vnet]
 }
@@ -68,7 +68,7 @@ module "keyvault" {
   resource_group_name = azurerm_resource_group.main.name
   allowed_subnet_ids  = [module.vnet.aks_subnet_id]
   aks_identity_id     = module.aks.cluster_identity
-  tags                = var.tags
+  tags                = local.keyvault_tags
 
   depends_on = [module.aks]
 }
@@ -85,7 +85,7 @@ module "acr" {
   sku                      = var.acr_sku
   retention_policy_enabled = var.acr_retention_policy_enabled
   image_retention_days     = var.acr_image_retention_days
-  tags                     = var.tags
+  tags                     = local.acr_tags
 
   depends_on = [module.aks]
 }

@@ -27,14 +27,13 @@ variable "project_name" {
 }
 
 variable "tags" {
-  description = "Tags applied to all resources"
+  description = "Business tags (owner, team, cost-center, project). Technical tags are computed in locals.tf."
   type        = map(string)
   default = {
-    environment = "dev"
     project     = "azure-infra"
     owner       = "amith-busireddy"
-    managed-by  = "terraform"
-    github      = "github.com/amithbusireddy/azure-infrastructure-terraform"
+    team        = "platform-engineering"
+    cost-center = "engineering"
   }
 }
 

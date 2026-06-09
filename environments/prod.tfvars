@@ -20,9 +20,8 @@ acr_retention_policy_enabled = true
 acr_image_retention_days     = 30
 
 tags = {
-  environment = "prod"
   project     = "azure-infra"
   owner       = "amith-busireddy"
-  managed-by  = "terraform"
-  github      = "github.com/amithvr46/azure-infrastructure-terraform"
+  team        = "platform-engineering"
+  cost-center = "engineering"
 }

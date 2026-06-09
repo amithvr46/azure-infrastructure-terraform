@@ -16,9 +16,8 @@ subnet_prefixes = {
 }
 
 tags = {
-  environment = "dev"
   project     = "azure-infra"
   owner       = "amith-busireddy"
-  managed-by  = "terraform"
-  github      = "github.com/amithvr46/azure-infrastructure-terraform"
+  team        = "platform-engineering"
+  cost-center = "engineering"
 }
