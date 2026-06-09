@@ -1,0 +1,125 @@
+name: Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to destroy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+      confirm:
+        description: 'Type "destroy" to confirm'
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: '1.8.3'
+  WORKING_DIR: '.'
+  BACKEND_RG: 'rg-tfstate'
+  BACKEND_SA: 'amithvr46tfstate'
+  BACKEND_CONTAINER: 'tfstate'
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Dev destroy — no approval gate
+  # ─────────────────────────────────────────────
+  destroy-dev:
+    name: Destroy (dev)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.environment == 'dev' && github.event.inputs.confirm == 'destroy'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Set ARM credentials
+        run: |
+          echo "ARM_CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .clientId)" >> $GITHUB_ENV
+          echo "ARM_CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .clientSecret)" >> $GITHUB_ENV
+          echo "ARM_SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .subscriptionId)" >> $GITHUB_ENV
+          echo "ARM_TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .tenantId)" >> $GITHUB_ENV
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Terraform Init (dev)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ env.BACKEND_RG }}" \
+            -backend-config="storage_account_name=${{ env.BACKEND_SA }}" \
+            -backend-config="container_name=${{ env.BACKEND_CONTAINER }}" \
+            -backend-config="key=dev/azure-infra.tfstate"
+
+      - name: Remove Key Vault from state (dev)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform state rm module.keyvault.azurerm_key_vault.main || true
+          az keyvault delete --name kv-azinfra-dev-01 --resource-group rg-azure-infra-dev || true
+          az keyvault purge --name kv-azinfra-dev-01 --location eastus || true
+
+      - name: Terraform Destroy (dev)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform destroy -auto-approve -lock=false -var-file=environments/dev.tfvars
+
+  # ─────────────────────────────────────────────
+  # Prod destroy — requires manual approval
+  # ─────────────────────────────────────────────
+  destroy-prod:
+    name: Destroy (prod)
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event.inputs.environment == 'prod' && github.event.inputs.confirm == 'destroy'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Set ARM credentials
+        run: |
+          echo "ARM_CLIENT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .clientId)" >> $GITHUB_ENV
+          echo "ARM_CLIENT_SECRET=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .clientSecret)" >> $GITHUB_ENV
+          echo "ARM_SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .subscriptionId)" >> $GITHUB_ENV
+          echo "ARM_TENANT_ID=$(echo '${{ secrets.AZURE_CREDENTIALS }}' | jq -r .tenantId)" >> $GITHUB_ENV
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Terraform Init (prod)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ env.BACKEND_RG }}" \
+            -backend-config="storage_account_name=${{ env.BACKEND_SA }}" \
+            -backend-config="container_name=${{ env.BACKEND_CONTAINER }}" \
+            -backend-config="key=prod/azure-infra.tfstate"
+
+      - name: Remove Key Vault from state (prod)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform state rm module.keyvault.azurerm_key_vault.main || true
+          az keyvault delete --name kv-azinfra-prod-01 --resource-group rg-azure-infra-prod || true
+          az keyvault purge --name kv-azinfra-prod-01 --location eastus || true
+
+      - name: Terraform Destroy (prod)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform destroy -auto-approve -lock=false -var-file=environments/prod.tfvars

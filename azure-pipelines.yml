@@ -1,0 +1,221 @@
+# Azure DevOps Pipeline — Terraform CI/CD
+# Mirrors GitHub Actions but uses ADO Environments for approvals
+# and ADO Variable Groups for credential management
+#
+# Branch strategy:
+#   develop → auto deploy to dev
+#   main    → plan prod → approval gate → deploy prod
+#
+# Setup required in ADO:
+#   1. Service connection: 'azure-service-connection' (Azure Resource Manager)
+#   2. Variable group: 'terraform-backend' with BACKEND_RG, BACKEND_SA, BACKEND_CONTAINER
+#   3. Environment: 'dev' (no approval needed)
+#   4. Environment: 'prod' (add yourself as required approver)
+
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+
+pr:
+  branches:
+    include:
+      - main
+      - develop
+
+variables:
+  - group: terraform-backend
+  - name: TF_VERSION
+    value: '1.8.3'
+  - name: WORKING_DIR
+    value: '$(System.DefaultWorkingDirectory)'
+
+stages:
+  # ─────────────────────────────────────────────
+  # Stage 1 — Validate (every trigger)
+  # ─────────────────────────────────────────────
+  - stage: Validate
+    displayName: Validate Terraform
+    jobs:
+      - job: validate
+        displayName: Validate
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: TerraformInstaller@1
+            displayName: Install Terraform
+            inputs:
+              terraformVersion: $(TF_VERSION)
+
+          - script: terraform fmt -check -recursive
+            displayName: Terraform Format Check
+            workingDirectory: $(WORKING_DIR)
+            continueOnError: true
+
+          - script: terraform init -backend=false
+            displayName: Terraform Init (no backend)
+            workingDirectory: $(WORKING_DIR)
+
+          - script: terraform validate
+            displayName: Terraform Validate
+            workingDirectory: $(WORKING_DIR)
+
+  # ─────────────────────────────────────────────
+  # Stage 2 — Security Scan (every trigger)
+  # ─────────────────────────────────────────────
+  - stage: SecurityScan
+    displayName: Security Scan
+    dependsOn: Validate
+    jobs:
+      - job: checkov
+        displayName: Checkov Security Scan
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - script: |
+              pip install checkov
+              checkov -d . --framework terraform --soft-fail
+            displayName: Run Checkov
+            workingDirectory: $(WORKING_DIR)
+
+  # ─────────────────────────────────────────────
+  # Stage 3 — Deploy Dev (develop branch only)
+  # ─────────────────────────────────────────────
+  - stage: DeployDev
+    displayName: Deploy to Dev
+    dependsOn: SecurityScan
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'))
+    jobs:
+      - deployment: deploy_dev
+        displayName: Terraform Apply (dev)
+        pool:
+          vmImage: ubuntu-latest
+        environment: dev
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: TerraformInstaller@1
+                  displayName: Install Terraform
+                  inputs:
+                    terraformVersion: $(TF_VERSION)
+
+                - task: TerraformTaskV4@4
+                  displayName: Terraform Init (dev)
+                  inputs:
+                    provider: azurerm
+                    command: init
+                    workingDirectory: $(WORKING_DIR)
+                    backendServiceArm: azure-service-connection
+                    backendAzureRmResourceGroupName: $(BACKEND_RG)
+                    backendAzureRmStorageAccountName: $(BACKEND_SA)
+                    backendAzureRmContainerName: $(BACKEND_CONTAINER)
+                    backendAzureRmKey: dev/azure-infra.tfstate
+
+                - task: TerraformTaskV4@4
+                  displayName: Terraform Apply (dev)
+                  inputs:
+                    provider: azurerm
+                    command: apply
+                    workingDirectory: $(WORKING_DIR)
+                    commandOptions: '-auto-approve -var-file=environments/dev.tfvars'
+                    environmentServiceNameAzureRM: azure-service-connection
+
+  # ─────────────────────────────────────────────
+  # Stage 4 — Plan Prod (main branch only)
+  # ─────────────────────────────────────────────
+  - stage: PlanProd
+    displayName: Plan Prod
+    dependsOn: SecurityScan
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: plan_prod
+        displayName: Terraform Plan (prod)
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: TerraformInstaller@1
+            displayName: Install Terraform
+            inputs:
+              terraformVersion: $(TF_VERSION)
+
+          - task: TerraformTaskV4@4
+            displayName: Terraform Init (prod)
+            inputs:
+              provider: azurerm
+              command: init
+              workingDirectory: $(WORKING_DIR)
+              backendServiceArm: azure-service-connection
+              backendAzureRmResourceGroupName: $(BACKEND_RG)
+              backendAzureRmStorageAccountName: $(BACKEND_SA)
+              backendAzureRmContainerName: $(BACKEND_CONTAINER)
+              backendAzureRmKey: prod/azure-infra.tfstate
+
+          - task: TerraformTaskV4@4
+            displayName: Terraform Plan (prod)
+            inputs:
+              provider: azurerm
+              command: plan
+              workingDirectory: $(WORKING_DIR)
+              commandOptions: '-out=tfplan -var-file=environments/prod.tfvars'
+              environmentServiceNameAzureRM: azure-service-connection
+
+          - task: PublishPipelineArtifact@1
+            displayName: Upload Plan Artifact
+            inputs:
+              targetPath: $(WORKING_DIR)/tfplan
+              artifact: tfplan-prod
+
+  # ─────────────────────────────────────────────
+  # Stage 5 — Deploy Prod (manual approval gate)
+  # ─────────────────────────────────────────────
+  - stage: DeployProd
+    displayName: Deploy to Prod
+    dependsOn: PlanProd
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: deploy_prod
+        displayName: Terraform Apply (prod)
+        pool:
+          vmImage: ubuntu-latest
+        environment: prod
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: TerraformInstaller@1
+                  displayName: Install Terraform
+                  inputs:
+                    terraformVersion: $(TF_VERSION)
+
+                - task: DownloadPipelineArtifact@2
+                  displayName: Download Plan Artifact
+                  inputs:
+                    artifact: tfplan-prod
+                    path: $(WORKING_DIR)
+
+                - task: TerraformTaskV4@4
+                  displayName: Terraform Init (prod)
+                  inputs:
+                    provider: azurerm
+                    command: init
+                    workingDirectory: $(WORKING_DIR)
+                    backendServiceArm: azure-service-connection
+                    backendAzureRmResourceGroupName: $(BACKEND_RG)
+                    backendAzureRmStorageAccountName: $(BACKEND_SA)
+                    backendAzureRmContainerName: $(BACKEND_CONTAINER)
+                    backendAzureRmKey: prod/azure-infra.tfstate
+
+                - task: TerraformTaskV4@4
+                  displayName: Terraform Apply (prod)
+                  inputs:
+                    provider: azurerm
+                    command: apply
+                    workingDirectory: $(WORKING_DIR)
+                    commandOptions: '-auto-approve tfplan'
+                    environmentServiceNameAzureRM: azure-service-connection

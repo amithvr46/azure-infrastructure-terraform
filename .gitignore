@@ -1,0 +1,26 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!environments/*.tfvars
+
+# Bootstrap state stays local — contains storage account access keys
+crash.log
+override.tf
+override.tf.json
+
+# Azure credentials - never commit these
+*.pem
+*.key
+.env
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Personal session context
+CLAUDE.md
